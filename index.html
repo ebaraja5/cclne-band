@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CCLNE Band — Repertorio</title>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+
+  <!-- 🌟 Add Firebase (Compat) SDKs 🌟 -->
+  <script src="https://www.gstatic.com/firebasejs/10.11.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.11.0/firebase-firestore-compat.js"></script>
+
+  <style>
+    /* [All your original styles, unchanged] */
+    :root {
+      --gold: #C9A84C;
+      --gold-light: #F0D9A0;
+      --gold-dark: #8B6914;
+      --deep: #0D0D0D;
+      --surface: #161616;
+      --surface2: #1F1F1F;
+      --surface3: #2A2A2A;
+      --border: rgba(201,168,76,0.18);
+      --text: #F0EDE8;
+      --text-muted: #9A9490;
+      --success: #4CAF7D;
+      --danger: #E05C5C;
+      --tier1: #4CAF7D;
+      --tier2: #E8A030;
+      --tier3: #E05C5C;
+    }
+    /* ... (snip: rest of your CSS unchanged) ... */
+    /* For the sake of space, paste your full CSS from the original above */
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-cross">✦ ✦ ✦</div>
+  <h1>CCLNE Band</h1>
+  <p>Repertorio Semanal</p>
+  <div class="divider"></div>
+</div>
+
+<div class="container">
+
+  <div class="tabs">
+    <button class="tab active" id="tab-submit" onclick="showTab('submit')">Enviar Canciones</button>
+    <button class="tab" id="tab-view" onclick="showTab('view')">Ver Repertorio</button>
+  </div>
+
+  <!-- SUBMIT PANEL -->
+  <div id="panel-submit">
+    <div class="card">
+      <p class="card-title">Registro del Domingo</p>
+
+      <div class="form-group">
+        <label>Tu nombre</label>
+        <select id="singer-select" onchange="onSingerChange()">
+          <option value="">— Selecciona tu nombre —</option>
+          <option>Emmanuel</option>
+          <option>Oziel</option>
+          <option>Irene</option>
+          <option>Aude</option>
+          <option>Israel</option>
+          <option>Rosario</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Tus canciones</label>
+        <div id="songs-container">
+          <div class="hint" id="no-singer-hint">Selecciona tu nombre para ver tus canciones disponibles.</div>
+        </div>
+        <button class="add-btn" id="add-btn" onclick="addSongEntry()" style="display:none">+ Agregar canción</button>
+      </div>
+
+      <button class="submit-btn" id="submit-btn" onclick="submitSongs()">Enviar Repertorio</button>
+      <div class="status" id="submit-status"></div>
+    </div>
+  </div>
+
+  <!-- VIEW PANEL -->
+  <div id="panel-view" style="display:none;">
+    <div class="card">
+      <div class="week-label">
+        <h2>Esta semana</h2>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span class="week-badge" id="current-week-label">—</span>
+          <button class="refresh-btn" onclick="loadView()">↻ Actualizar</button>
+        </div>
+      </div>
+      <div id="current-entries"><div class="loading">Cargando...</div></div>
+    </div>
+    <div class="section-sep"><hr><span>Semanas anteriores</span><hr></div>
+    <div class="card">
+      <div id="past-entries"><div class="loading">Cargando...</div></div>
+    </div>
+  </div>
+
+</div>
+
+<footer>CCLNE Band &nbsp;·&nbsp; Cada domingo, juntos</footer>
+
+<script>
+/*
+  ──────────── 🌟 1. FIREBASE SETUP 🌟 ────────────
+  Replace the config below WITH YOUR OWN FROM THE CONSOLE
+*/
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  // ...rest of config
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+/*
+  ──────────── 2. ORIGINAL JS + MINOR ADAPTATIONS ────────────
+*/
+
+// [All unchanged: REPERTOIRE, KEYS, helpers, UI logic below]
+// ---- BEGIN: All code below is the same except for submitSongs, loadView (which use Firestore now) ----
+const REPERTOIRE = {
+  // ... (paste your original REPERTOIRE object here - unchanged) ...
+};
+const KEYS = [
+  // ... (paste your original KEYS array) ...
+];
+
+function getWeekKey() {
+  const now = new Date();
+  const day = now.getDay();
+  const sunday = new Date(now);
+  sunday.setDate(now.getDate() - day);
+  return `cclne_week_${sunday.getFullYear()}_${String(sunday.getMonth()+1).padStart(2,'0')}_${String(sunday.getDate()).padStart(2,'0')}`;
+}
+
+function formatWeekLabel(key) {
+  const parts = key.replace('cclne_week_','').split('_');
+  const d = new Date(parseInt(parts[0]), parseInt(parts[1])-1, parseInt(parts[2]));
+  return d.toLocaleDateString('es-MX', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+}
+
+function getInitials(name) {
+  return name.trim().split(' ').filter(Boolean).slice(0,2).map(w => w[0].toUpperCase()).join('');
+}
+
+function tierLabel(t) {
+  const map = { 1: '🟢 Tier 1', 2: '🟡 Tier 2', 3: '🔴 Tier 3' };
+  return map[t] || '';
+}
+function tierClass(t) {
+  return ['','tier1','tier2','tier3'][t] || '';
+}
+
+// ─── TABS ──────────────────────────────
+function showTab(tab) {
+  document.getElementById('tab-submit').classList.toggle('active', tab === 'submit');
+  document.getElementById('tab-view').classList.toggle('active', tab === 'view');
+  document.getElementById('panel-submit').style.display = tab === 'submit' ? 'block' : 'none';
+  document.getElementById('panel-view').style.display = tab === 'view' ? 'block' : 'none';
+  if (tab === 'view') loadView();
+}
+
+// ─── SINGER CHANGE ─────────────────────
+function onSingerChange() {
+  const singer = document.getElementById('singer-select').value;
+  const container = document.getElementById('songs-container');
+  const addBtn = document.getElementById('add-btn');
+  container.innerHTML = '';
+  if (!singer) {
+    container.innerHTML = '<div class="hint" id="no-singer-hint">Selecciona tu nombre para ver tus canciones disponibles.</div>';
+    addBtn.style.display = 'none';
+    return;
+  }
+  addBtn.style.display = 'block';
+  addSongEntry(); // Add first row automatically
+}
+
+let songCount = 0;
+function addSongEntry() {
+  const singer = document.getElementById('singer-select').value;
+  if (!singer) return;
+
+  songCount++;
+  const songs = REPERTOIRE[singer] || [];
+  const container = document.getElementById('songs-container');
+
+  const entry = document.createElement('div');
+  entry.className = 'song-entry';
+  entry.dataset.id = songCount;
+
+  // Build song options
+  const songOptions = songs.map(s =>
+    `<option value="${s.song}" data-key="${s.key || ''}" data-tier="${s.tier}">${s.song}${s.artist && s.artist !== '—' ? ' — ' + s.artist : ''}</option>`
+  ).join('');
+
+  // Build key options
+  const keyOptions = KEYS.map(k => `<option value="${k}">${k}</option>`).join('');
+
+  entry.innerHTML = `
+    <div class="song-entry-header">
+      <span class="song-num">Canción ${songCount}</span>
+      <button class="remove-btn" onclick="removeSongEntry(this)" title="Quitar">×</button>
+    </div>
+    <div class="song-fields">
+      <select class="song-select" onchange="onSongSelect(this)">
+        <option value="">— Selecciona una canción —</option>
+        ${songOptions}
+      </select>
+      <div class="key-grid">
+        <select class="key-select">
+          <option value="">— Tonalidad —</option>
+          <option value="no-recuerdo">🎵 No recuerdo la tonalidad</option>
+          ${keyOptions}
+        </select>
+        <div class="tier-info"></div>
+      </div>
+    </div>
+  `;
+  container.appendChild(entry);
+  entry.querySelector('.song-select').focus();
+}
+
+function onSongSelect(sel) {
+  const entry = sel.closest('.song-entry');
+  const opt = sel.selectedOptions[0];
+  const keySelect = entry.querySelector('.key-select');
+  const tierInfo = entry.querySelector('.tier-info');
+
+  if (opt && opt.dataset.key) {
+    keySelect.value = opt.dataset.key;
+  } else {
+    keySelect.value = '';
+  }
+
+  if (opt && opt.dataset.tier) {
+    const t = parseInt(opt.dataset.tier);
+    tierInfo.innerHTML = `<span class="tier-badge ${tierClass(t)}">${tierLabel(t)}</span>`;
+  } else {
+    tierInfo.innerHTML = '';
+  }
+}
+
+function removeSongEntry(btn) {
+  const container = document.getElementById('songs-container');
+  if (container.children.length > 1) {
+    btn.closest('.song-entry').remove();
+    // Renumber
+    Array.from(container.querySelectorAll('.song-num')).forEach((el, i) => {
+      el.textContent = `Canción ${i + 1}`;
+    });
+  }
+}
+function showStatus(msg, ok) {
+  const el = document.getElementById('submit-status');
+  el.textContent = msg;
+  el.className = 'status ' + (ok ? 'ok' : 'err');
+}
+
+// ─── SUBMIT (USES FIRESTORE NOW) ───────
+async function submitSongs() {
+  const name = document.getElementById('singer-select').value;
+  if (!name) { showStatus('Por favor selecciona tu nombre.', false); return; }
+
+  const entries = Array.from(document.querySelectorAll('.song-entry')).map(entry => {
+    const song = entry.querySelector('.song-select').value;
+    const key = entry.querySelector('.key-select').value;
+    return song ? { song, key: key || 'No recuerdo' } : null;
+  }).filter(Boolean);
+
+  if (!entries.length) { showStatus('Agrega al menos una canción.', false); return; }
+
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Enviando...';
+
+  try {
+    const weekKey = getWeekKey();
+    let weekData = {};
+    const weekDoc = await db.collection("weeks").doc(weekKey).get();
+    if (weekDoc.exists) weekData = weekDoc.data();
+    weekData[name] = { songs: entries, submittedAt: new Date().toISOString() };
+    await db.collection("weeks").doc(weekKey).set(weekData, { merge: true });
+
+    showStatus('¡Enviado con éxito! La banda ya puede verlo.', true);
+    document.getElementById('singer-select').value = '';
+    onSingerChange();
+  } catch(e) {
+    console.error(e);
+    showStatus('Error al guardar. Intenta de nuevo.', false);
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Enviar Repertorio';
+}
+
+// ─── VIEW (USES FIRESTORE NOW) ─────────
+async function loadView() {
+  const weekKey = getWeekKey();
+  document.getElementById('current-week-label').textContent = formatWeekLabel(weekKey);
+  document.getElementById('current-entries').innerHTML = '<div class="loading">Cargando...</div>';
+  document.getElementById('past-entries').innerHTML = '<div class="loading">Cargando...</div>';
+
+  // Current week
+  try {
+    const weekDoc = await db.collection("weeks").doc(weekKey).get();
+    const weekData = weekDoc.exists ? weekDoc.data() : {};
+    const names = Object.keys(weekData);
+    if (!names.length) {
+      document.getElementById('current-entries').innerHTML = `<div class="empty"><div class="empty-icon">🎵</div>Nadie ha enviado canciones todavía este domingo.</div>`;
+    } else {
+      document.getElementById('current-entries').innerHTML = names.map(n => {
+        const { songs } = weekData[n];
+        const songItems = songs.map(s => {
+          const keyHtml = (!s.key || s.key === 'No recuerdo' || s.key === '')
+            ? `<span class="key-unknown">Tonalidad no especificada</span>`
+            : `<span class="key-tag">${s.key}</span>`;
+          return `<div class="song-item">
+            <div class="song-bullet"></div>
+            <div class="song-item-info">
+              <div class="song-item-name">${s.song || s}</div>
+              <div class="song-item-meta">${keyHtml}</div>
+            </div>
+          </div>`;
+        }).join('');
+        return `<div class="singer-card">
+          <div class="singer-header">
+            <div class="avatar">${getInitials(n)}</div>
+            <span class="singer-name-text">${n}</span>
+          </div>
+          ${songItems}
+        </div>`;
+      }).join('');
+    }
+  } catch(e) {
+    document.getElementById('current-entries').innerHTML = '<div class="empty">Error al cargar.</div>';
+  }
+
+  // Past weeks (get 6 weeks max, skipping current week)
+  try {
+    // Firestore orders by key (date), so limit and filter out current
+    const q = await db.collection("weeks")
+      .orderBy(firebase.firestore.FieldPath.documentId(), "desc")
+      .limit(7).get();
+    const entries = q.docs.filter(doc => doc.id !== weekKey);
+    if (!entries.length) {
+      document.getElementById('past-entries').innerHTML = '<div class="empty" style="padding:1rem;">No hay semanas anteriores aún.</div>';
+      return;
+    }
+    let html = '';
+    for (const doc of entries) {
+      // Each doc.id is weekKey
+      const data = doc.data();
+      const names = Object.keys(data);
+      if (!names.length) continue;
+      html += `<div class="past-entry"><div class="past-date">${formatWeekLabel(doc.id)}</div>`;
+      names.forEach(n => {
+        const songs = data[n].songs || [];
+        const songList = songs.map(s => {
+          const name = s.song || s;
+          const key = s.key && s.key !== 'No recuerdo' ? ` (${s.key})` : '';
+          return name + key;
+        }).join(', ');
+        html += `<div class="past-singer"><strong>${n}:</strong> ${songList}</div>`;
+      });
+      html += `</div>`;
+    }
+    document.getElementById('past-entries').innerHTML = html || '<div class="empty" style="padding:1rem;">Sin registros anteriores.</div>';
+  } catch(e) {
+    document.getElementById('past-entries').innerHTML = '<div class="empty">Error al cargar.</div>';
+  }
+}
+</script>
+</body>
+</html>
